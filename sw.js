@@ -1,49 +1,37 @@
 
-const CACHE_NAME = 'budget-buddy-v1';
-const CORE_ASSETS = [
-  './','./index.html','./styles.css','./manifest.webmanifest','./sw.js',
-  './icons/icon-192.png','./icons/icon-512.png','./icons/icon-512-maskable.png',
+/* sw.js (minimal known-good) */
+const CACHE = 'budget-buddy-v1';
+const PRECACHE = [
+  './',
+  './index.html',
+  './styles.css',
+  // You can add more later: './manifest.webmanifest', icons, etc.
 ];
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
-  event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(CORE_ASSETS)));
+  event.waitUntil(
+    caches.open(CACHE).then((cache) => cache.addAll(PRECACHE))
+  );
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then(keys => Promise.all(keys.map(k => (k !== CACHE_NAME ? caches.delete(k) : null))))
-  );
-  self.clients.claim();
+  event.waitUntil(self.clients.claim());
 });
 
 self.addEventListener('fetch', (event) => {
   const req = event.request;
 
-  // Navigation: Network-first (fallback to cache)
+  // For navigations: try network first, fallback to cached index.html
   if (req.mode === 'navigate') {
     event.respondWith(
-      fetch(req).then(res => {
-        const copy = res.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(req, copy));
-        return res;
-      }).catch(() => caches.match(req).then(r => r || caches.match('./index.html')))
+      fetch(req).catch(() => caches.match('./index.html'))
     );
     return;
   }
 
-  // Static assets: Cache-first
-  const isStatic = ['style', 'script', 'image', 'font'].includes(req.destination);
-  if (isStatic) {
-    event.respondWith(
-      caches.match(req).then(cached => {
-        if (cached) return cached;
-        return fetch(req, { mode: 'no-cors' }).then(res => {
-          const copy = res.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(req, copy));
-          return res;
-        });
-      })
-    );
-  }
+  // For other requests: serve from cache or fall back to network
+  event.respondWith(
+    caches.match(req).then((cached) => cached || fetch(req))
+  );
 });
